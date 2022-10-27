@@ -23,6 +23,7 @@ from avatar2 import TargetStates
 from threading import Thread, Event
 from utils import *
 
+# Configure the logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -34,21 +35,23 @@ OUT_DIR = "./myavatar"
 fn = '../../projs/infoExtraction/k64.txt'
 QEMU_PATH = "../../avatar2/targets/build/qemu/arm-softmmu/qemu-system-arm"
 
-# read file
+# Read board config from a file.
+# TO-DO: I'm curious about this file!!
 regs, data_register, allTAs, counters, interrupt_freq = read_file(fn)
 
 # Create avatar instance with custom output directory
 avatar = Avatar(arch=archs.arm.ARM_CORTEX_M3, output_directory=OUT_DIR)
 avatar.load_plugin('arm.armv7m_interrupts')
+
 # Add qemu target
 print("[+] Creating the QEMUTarget")
 qemu = avatar.add_target(QemuTarget,
-                              gdb_executable="arm-none-eabi-gdb",
-                              gdb_port=4321,
-                              firmware=sample, cpu_model="cortex-m4",
-                              entry_address=0x1020D,
-                              executable=QEMU_PATH,
-                              log_items = ['avatar','in_asm','nochain'])
+                            gdb_executable="arm-none-eabi-gdb",
+                            gdb_port=4321,
+                            firmware=sample, cpu_model="cortex-m4",
+                            entry_address=0x1020D,
+                            executable=QEMU_PATH,
+                            log_items = ['avatar','in_asm','nochain'])
 
 #ROM = bytearray()
 class Interrupter(Thread):
@@ -72,19 +75,25 @@ class Interrupter(Thread):
 
 class NLPPeripheral(AvatarPeripheral):
     def hw_read(self, offset, size, pc):
+        """
+        Read: return the value.
+        """
         logger.info("+++++++++++++++++++++++++++++++++")
         logger.info("[+] QEMU reached peripheral: read")
+        
+        # Get the physical address in ARM memory space.
         phaddr = self.address + offset
-        logger.info("[+] Read: " + self.name + ", at: " + format(phaddr, '#04x') +
-                     "(" + format(offset, '#04x') + "), size: " + format(size, '#04x') +
-                     ", pc: " + format(pc, '#04x'))
+        logger.info("[+] Read: " + self.name + ", at: " + format(phaddr, '#04x') + "(" + format(offset, '#04x') + "), size: " + format(size, '#04x') + ", pc: " + format(pc, '#04x'))
         CountDown(regs, counters)
+        
+        # If this register is a DataRegister, then return the r (reserved?) value.
         if phaddr in data_register:
             res = regs[phaddr].r_value
             hardware_write_to_receive_buffer(regs, phaddr, 0xA, 32)
         else:
             res = regs[phaddr].cur_value
         UpdateGraph(regs, data_register, allTAs, interrupt_freq, READ, phaddr, qemu)
+        
         if type(res) == int:
             logger.info("return value from NLP = " + format(res, '#04x'))
         else:
@@ -92,12 +101,13 @@ class NLPPeripheral(AvatarPeripheral):
         return res
 
     def hw_write(self, offset, size, value, pc):
+        """
+        Write: Return successfully or unsuccessfull of writing. So the returned value is a boolean one.
+        """
         logger.info("+++++++++++++++++++++++++++++++++")
         logger.info("[+] QEMU reached peripheral: write")
         phaddr = self.address + offset
-        logger.info("[+] Write: " + self.name + " at: " + format(phaddr, '#04x') +
-                     "(" + format(offset, '#04x') + "), size: " + format(size, '#04x') +
-                     ", value: " + format(value, '#04x') + ", pc: " + format(pc, '#04x'))
+        logger.info("[+] Write: " + self.name + " at: " + format(phaddr, '#04x') + "(" + format(offset, '#04x') + "), size: " + format(size, '#04x') + ", value: " + format(value, '#04x') + ", pc: " + format(pc, '#04x'))
         if phaddr not in data_register:
             regs[phaddr].cur_value = value
         else:
